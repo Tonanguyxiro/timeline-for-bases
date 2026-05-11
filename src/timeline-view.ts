@@ -258,7 +258,9 @@ export class TimelineView extends BasesView {
 		this.containerEl.addEventListener('keydown', this._boundKeyDown);
 		this.containerEl.setAttribute('tabindex', '-1'); // allow keyboard focus
 		this.render();
-		void this.ensureBaseYamlCache();
+		void this.ensureBaseYamlCache().catch(err => {
+			console.error('[Timeline] Failed to initialize base cache:', err);
+		});
 	}
 
 	onunload(): void {
@@ -446,6 +448,10 @@ export class TimelineView extends BasesView {
 		return this.app.workspace.getLeavesOfType('bases')[0];
 	}
 
+	private getHostView(): BaseHostView | undefined {
+		return this._getHostBasesLeaf()?.view as BaseHostView | undefined;
+	}
+
 	private resolveBaseFilePath(hostView?: BaseHostView): string | null {
 		const directPath = hostView?.file?.path;
 		if (directPath) return directPath;
@@ -490,7 +496,7 @@ export class TimelineView extends BasesView {
 
 	private async ensureBaseYamlCache(): Promise<void> {
 		if (this._baseYamlLoading) return;
-		const hostView = this._getHostBasesLeaf()?.view as BaseHostView | undefined;
+		const hostView = this.getHostView();
 		const basePath = this.resolveBaseFilePath(hostView);
 		if (!basePath) return;
 
@@ -516,10 +522,14 @@ export class TimelineView extends BasesView {
 	}
 
 	private getYamlValue(key: string): string | null {
-		const hostView = this._getHostBasesLeaf()?.view as BaseHostView | undefined;
+		const hostView = this.getHostView();
 		const yaml = this.getBaseYamlSync(hostView);
 		if (yaml) return readYamlKeyValue(yaml, key);
-		if (!this._baseYamlLoading) void this.ensureBaseYamlCache();
+		if (!this._baseYamlLoading) {
+			void this.ensureBaseYamlCache().catch(err => {
+				console.error('[Timeline] Failed to refresh base cache:', err);
+			});
+		}
 		return null;
 	}
 
@@ -536,7 +546,7 @@ export class TimelineView extends BasesView {
 		this._viewConfigOverrides[key] = value as unknown;
 		this.getRawConfig()[key] = value as unknown;
 
-		const hostView = this._getHostBasesLeaf()?.view as BaseHostView | undefined;
+		const hostView = this.getHostView();
 
 		if (persistOnly) {
 			// For persist-only saves, skip config.set() and requestSave() / setViewData()
