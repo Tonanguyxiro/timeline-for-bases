@@ -502,7 +502,12 @@ export class TimelineView extends BasesView {
 		try {
 			const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
 			if (!abstractFile || !(abstractFile instanceof TFile)) return;
-			this._baseYamlCache = await this.app.vault.read(abstractFile);
+			try {
+				this._baseYamlCache = await this.app.vault.read(abstractFile);
+			} catch (err) {
+				console.error('[Timeline] Failed to read base file:', err);
+				return;
+			}
 			this._baseYamlCachePath = basePath;
 			if (this.data) this.render();
 		} finally {
@@ -571,7 +576,12 @@ export class TimelineView extends BasesView {
 		const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
 		if (!abstractFile || !(abstractFile instanceof TFile)) return;
 		if (!yaml) {
-			yaml = await this.app.vault.read(abstractFile);
+			try {
+				yaml = await this.app.vault.read(abstractFile);
+			} catch (err) {
+				console.error('[Timeline] Failed to read base file:', err);
+				return;
+			}
 		}
 
 		const { yaml: nextYaml, changed } = applyCustomKeysToYaml(
@@ -580,7 +590,12 @@ export class TimelineView extends BasesView {
 		);
 		if (!changed) return;
 
-		await this.app.vault.modify(abstractFile, nextYaml);
+		try {
+			await this.app.vault.modify(abstractFile, nextYaml);
+		} catch (err) {
+			console.error('[Timeline] Failed to persist base config:', err);
+			return;
+		}
 		this._baseYamlCache = nextYaml;
 		this._baseYamlCachePath = basePath;
 	}
