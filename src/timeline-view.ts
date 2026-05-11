@@ -504,10 +504,14 @@ export class TimelineView extends BasesView {
 		if (liveYaml && this._baseYamlCachePath === basePath) return;
 		if (this._baseYamlCache && this._baseYamlCachePath === basePath) return;
 
+		const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
+		if (!abstractFile || !(abstractFile instanceof TFile)) {
+			console.warn('[Timeline] Base file not found for cache load:', basePath);
+			return;
+		}
+
 		this._baseYamlLoading = true;
 		try {
-			const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
-			if (!abstractFile || !(abstractFile instanceof TFile)) return;
 			try {
 				this._baseYamlCache = await this.app.vault.read(abstractFile);
 			} catch (err) {
@@ -584,7 +588,10 @@ export class TimelineView extends BasesView {
 
 		let yaml = this.getBaseYamlSync(hostView);
 		const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
-		if (!abstractFile || !(abstractFile instanceof TFile)) return;
+		if (!abstractFile || !(abstractFile instanceof TFile)) {
+			console.warn('[Timeline] Base file not found for config persistence:', basePath);
+			return;
+		}
 		if (!yaml) {
 			try {
 				yaml = await this.app.vault.read(abstractFile);
