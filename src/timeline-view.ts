@@ -13,6 +13,7 @@ import {
 	NullValue,
 	Notice,
 	QueryController,
+	TFile,
 	Value,
 	debounce,
 	normalizePath,
@@ -87,6 +88,22 @@ interface RenderGroup {
 	entries: BasesEntry[];
 	hasKey: boolean;
 }
+
+type BaseFileRef = { path?: string } | string;
+
+type BaseHostView = {
+	getViewData?: () => string;
+	setViewData?: (data: string, clear: boolean) => void;
+	requestSave?: () => Promise<void> | void;
+	file?: { path?: string };
+};
+
+type ControllerWithBaseFile = QueryController & {
+	file?: BaseFileRef;
+	view?: { file?: BaseFileRef };
+	baseFile?: BaseFileRef;
+	sourceFile?: BaseFileRef;
+};
 
 const LABEL_COLUMN_WIDTH_PX = 175;
 const PROP_COLUMN_WIDTH_PX = 110;
@@ -429,21 +446,25 @@ export class TimelineView extends BasesView {
 		return this.app.workspace.getLeavesOfType('bases')[0];
 	}
 
-	private resolveBaseFilePath(hostView?: { file?: { path?: string } } | undefined): string | null {
+	private resolveBaseFilePath(hostView?: BaseHostView): string | null {
 		const directPath = hostView?.file?.path;
 		if (directPath) return directPath;
 		if (this._baseYamlCachePath) return this._baseYamlCachePath;
 
-		const controller = this._controller as any;
-		const rawConfig = this.getRawConfig() as any;
-		const candidates = [
-			controller?.file,
-			controller?.view?.file,
-			controller?.baseFile,
-			controller?.sourceFile,
-			rawConfig?.file,
-			rawConfig?.baseFile,
-			rawConfig?.sourceFile,
+		const controller = this._controller as ControllerWithBaseFile;
+		const rawConfig = this.getRawConfig() as {
+			file?: BaseFileRef;
+			baseFile?: BaseFileRef;
+			sourceFile?: BaseFileRef;
+		};
+		const candidates: Array<BaseFileRef | undefined> = [
+			controller.file,
+			controller.view?.file,
+			controller.baseFile,
+			controller.sourceFile,
+			rawConfig.file,
+			rawConfig.baseFile,
+			rawConfig.sourceFile,
 		];
 		for (const candidate of candidates) {
 			if (!candidate) continue;
@@ -453,12 +474,12 @@ export class TimelineView extends BasesView {
 		return null;
 	}
 
-	private getBaseYamlSync(hostView?: { getViewData?: () => string } | undefined): string | null {
+	private getBaseYamlSync(hostView?: BaseHostView): string | null {
 		const getViewData = hostView?.getViewData;
 		if (typeof getViewData === 'function') {
 			const yaml = getViewData.call(hostView);
 			if (typeof yaml === 'string') {
-				const basePath = this.resolveBaseFilePath(hostView as any);
+				const basePath = this.resolveBaseFilePath(hostView);
 				if (basePath) this._baseYamlCachePath = basePath;
 				this._baseYamlCache = yaml;
 				return yaml;
@@ -469,7 +490,7 @@ export class TimelineView extends BasesView {
 
 	private async ensureBaseYamlCache(): Promise<void> {
 		if (this._baseYamlLoading) return;
-		const hostView = this._getHostBasesLeaf()?.view as { getViewData?: () => string; file?: { path?: string } } | undefined;
+		const hostView = this._getHostBasesLeaf()?.view as BaseHostView | undefined;
 		const basePath = this.resolveBaseFilePath(hostView);
 		if (!basePath) return;
 
@@ -480,8 +501,8 @@ export class TimelineView extends BasesView {
 		this._baseYamlLoading = true;
 		try {
 			const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
-			if (!abstractFile) return;
-			this._baseYamlCache = await this.app.vault.read(abstractFile as any);
+			if (!abstractFile || !(abstractFile instanceof TFile)) return;
+			this._baseYamlCache = await this.app.vault.read(abstractFile);
 			this._baseYamlCachePath = basePath;
 			if (this.data) this.render();
 		} finally {
@@ -490,7 +511,7 @@ export class TimelineView extends BasesView {
 	}
 
 	private getYamlValue(key: string): string | null {
-		const hostView = this._getHostBasesLeaf()?.view as { getViewData?: () => string; file?: { path?: string } } | undefined;
+		const hostView = this._getHostBasesLeaf()?.view as BaseHostView | undefined;
 		const yaml = this.getBaseYamlSync(hostView);
 		if (yaml) return readYamlKeyValue(yaml, key);
 		if (!this._baseYamlLoading) void this.ensureBaseYamlCache();
@@ -510,9 +531,7 @@ export class TimelineView extends BasesView {
 		this._viewConfigOverrides[key] = value as unknown;
 		this.getRawConfig()[key] = value as unknown;
 
-		const hostView = this._getHostBasesLeaf()?.view as
-			| { getViewData?: () => string; setViewData?: (data: string, clear: boolean) => void; requestSave?: () => Promise<void> | void }
-			| undefined;
+		const hostView = this._getHostBasesLeaf()?.view as BaseHostView | undefined;
 
 		if (persistOnly) {
 			// For persist-only saves, skip config.set() and requestSave() / setViewData()
@@ -544,15 +563,15 @@ export class TimelineView extends BasesView {
 	 *  Bases save cycle (which would recreate the view, causing a white flash).
 	 *  Reads the current file content, injects/updates custom keys in YAML,
 	 *  and writes back via vault.modify(). */
-	private async _persistCustomKeysDirect(hostView: { getViewData?: () => string } | undefined): Promise<void> {
-		const basePath = this.resolveBaseFilePath(hostView as { file?: { path?: string } } | undefined);
+	private async _persistCustomKeysDirect(hostView: BaseHostView | undefined): Promise<void> {
+		const basePath = this.resolveBaseFilePath(hostView);
 		if (!basePath) return;
 
 		let yaml = this.getBaseYamlSync(hostView);
 		const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
-		if (!abstractFile) return;
+		if (!abstractFile || !(abstractFile instanceof TFile)) return;
 		if (!yaml) {
-			yaml = await this.app.vault.read(abstractFile as any);
+			yaml = await this.app.vault.read(abstractFile);
 		}
 
 		const { yaml: nextYaml, changed } = applyCustomKeysToYaml(
@@ -561,7 +580,7 @@ export class TimelineView extends BasesView {
 		);
 		if (!changed) return;
 
-		await this.app.vault.modify(abstractFile as any, nextYaml);
+		await this.app.vault.modify(abstractFile, nextYaml);
 		this._baseYamlCache = nextYaml;
 		this._baseYamlCachePath = basePath;
 	}
@@ -570,7 +589,7 @@ export class TimelineView extends BasesView {
 	 *  re-quote any CUSTOM_STRING_KEYS that Bases' serializer wrote unquoted.
 	 *  Writes via setViewData + requestSave so Bases' save pipeline owns the
 	 *  final round-trip. */
-	private _persistCustomKeys(hostView: { getViewData?: () => string; setViewData?: (data: string, clear: boolean) => void; requestSave?: () => Promise<void> | void } | undefined): void {
+	private _persistCustomKeys(hostView: BaseHostView | undefined): void {
 		const getViewData = hostView?.getViewData;
 		const setViewData = hostView?.setViewData;
 		if (typeof getViewData !== 'function' || typeof setViewData !== 'function') return;
@@ -581,7 +600,7 @@ export class TimelineView extends BasesView {
 		);
 		if (!changed) return;
 
-		const basePath = this.resolveBaseFilePath(hostView as { file?: { path?: string } } | undefined);
+		const basePath = this.resolveBaseFilePath(hostView);
 		if (basePath) {
 			this._baseYamlCache = yaml;
 			this._baseYamlCachePath = basePath;
@@ -671,7 +690,7 @@ export class TimelineView extends BasesView {
 	}
 
 	/** Read a BasesPropertyId from multiple sources: in-memory overrides,
-	 *  the raw YAML view data (parse the key from getViewData()), or
+	 *  the raw YAML view data (parse the key from the base file), or
 	 *  Bases' declared config.  Needed for keys like `colorBy` that
 	 *  aren't declared Bases options and get stripped by `requestSave()`. */
 	private getPropertyIdFromConfig(key: string): BasesPropertyId | null {
