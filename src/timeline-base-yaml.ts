@@ -6,6 +6,16 @@ function quoteYamlString(value: string): string {
 	return "'" + value.replace(/'/g, "''") + "'";
 }
 
+function unquoteYamlString(value: string): string {
+	if (value.startsWith("'") && value.endsWith("'")) {
+		return value.slice(1, -1).replace(/''/g, "'");
+	}
+	if (value.startsWith('"') && value.endsWith('"')) {
+		return value.slice(1, -1).replace(/\\"/g, '"');
+	}
+	return value;
+}
+
 function formatValueLine(indent: string, key: string, value: unknown): string | null {
 	if (typeof value === 'number') return `${indent}${key}: ${value}`;
 	if (typeof value === 'boolean') return `${indent}${key}: ${value}`;
@@ -66,4 +76,15 @@ export function applyCustomKeysToYaml(
 	}
 
 	return { yaml: next, changed };
+}
+
+export function readYamlKeyValue(
+	yaml: string,
+	key: string,
+	indent: string = DEFAULT_INDENT,
+): string | null {
+	const pattern = new RegExp(`^${indent}${key}:\\s(.+)$`, 'm');
+	const match = pattern.exec(yaml);
+	if (!match) return null;
+	return unquoteYamlString(match[1].trim());
 }

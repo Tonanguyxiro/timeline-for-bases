@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { applyCustomKeysToYaml } from '../src/timeline-base-yaml';
+import { applyCustomKeysToYaml, readYamlKeyValue } from '../src/timeline-base-yaml';
 
 const baseYaml = `views:
   - type: timeline
@@ -76,4 +76,17 @@ test('round-trips: writing then re-applying the same overrides is idempotent', (
 	const second = applyCustomKeysToYaml(first.yaml, overrides);
 	assert.equal(second.changed, false);
 	assert.equal(second.yaml, first.yaml);
+});
+
+test('reads YAML key values with quotes stripped', () => {
+	const yaml = baseYaml.trimEnd()
+		+ "\n    colorMap: 'High=#e03131;Low=#2f9e44'\n"
+		+ '    borderWidth: 3\n';
+	assert.equal(readYamlKeyValue(yaml, 'colorMap'), 'High=#e03131;Low=#2f9e44');
+	assert.equal(readYamlKeyValue(yaml, 'borderWidth'), '3');
+});
+
+test('unescapes single quotes inside YAML strings', () => {
+	const yaml = baseYaml.trimEnd() + "\n    colorMap: 'It''s=ok'\n";
+	assert.equal(readYamlKeyValue(yaml, 'colorMap'), "It's=ok");
 });

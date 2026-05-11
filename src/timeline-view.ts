@@ -39,7 +39,7 @@ import {
 	getClampedBorderWidth,
 	getCompleteStyleMap,
 } from './timeline-style-config';
-import { applyCustomKeysToYaml } from './timeline-base-yaml';
+import { applyCustomKeysToYaml, readYamlKeyValue } from './timeline-base-yaml';
 import {
 	formatTickLabel,
 	getAxisFormatter,
@@ -178,6 +178,7 @@ export class TimelineView extends BasesView {
 	bodyEl: HTMLElement;
 	controlsEl: HTMLElement;
 	plugin: TimelinePlugin;
+	private _controller: QueryController;
 	private _renderSeq = 0;
 
 	// Stored after each render for Today/Jump scroll
@@ -211,6 +212,9 @@ export class TimelineView extends BasesView {
 	private _scrollSyncRaf = 0;
 	private _todaySyncRaf = 0;
 	private _viewConfigOverrides: Record<string, unknown> = {};
+	private _baseYamlCache: string | null = null;
+	private _baseYamlCachePath: string | null = null;
+	private _baseYamlLoading = false;
 	private _dayLabelSlots: DayLabelSlot[] = [];
 	private _rowElsByPath = new Map<string, HTMLElement>();
 	private _barElsByPath = new Map<string, HTMLElement>();
@@ -220,6 +224,7 @@ export class TimelineView extends BasesView {
 
 	constructor(controller: QueryController, scrollEl: HTMLElement, plugin: TimelinePlugin) {
 		super(controller);
+		this._controller = controller;
 		this.plugin = plugin;
 		this.containerEl = scrollEl.createDiv({ cls: 'bases-timeline-view' });
 		this.headerEl = this.containerEl.createDiv({ cls: 'bases-timeline-header' });
@@ -236,6 +241,7 @@ export class TimelineView extends BasesView {
 		this.containerEl.addEventListener('keydown', this._boundKeyDown);
 		this.containerEl.setAttribute('tabindex', '-1'); // allow keyboard focus
 		this.render();
+		void this.ensureBaseYamlCache();
 	}
 
 	onunload(): void {
@@ -423,10 +429,80 @@ export class TimelineView extends BasesView {
 		return this.app.workspace.getLeavesOfType('bases')[0];
 	}
 
+	private resolveBaseFilePath(hostView?: { file?: { path?: string } } | undefined): string | null {
+		const directPath = hostView?.file?.path;
+		if (directPath) return directPath;
+		if (this._baseYamlCachePath) return this._baseYamlCachePath;
+
+		const controller = this._controller as any;
+		const rawConfig = this.getRawConfig() as any;
+		const candidates = [
+			controller?.file,
+			controller?.view?.file,
+			controller?.baseFile,
+			controller?.sourceFile,
+			rawConfig?.file,
+			rawConfig?.baseFile,
+			rawConfig?.sourceFile,
+		];
+		for (const candidate of candidates) {
+			if (!candidate) continue;
+			if (typeof candidate === 'string') return candidate;
+			if (typeof candidate?.path === 'string') return candidate.path;
+		}
+		return null;
+	}
+
+	private getBaseYamlSync(hostView?: { getViewData?: () => string } | undefined): string | null {
+		const getViewData = hostView?.getViewData;
+		if (typeof getViewData === 'function') {
+			const yaml = getViewData.call(hostView);
+			if (typeof yaml === 'string') {
+				const basePath = this.resolveBaseFilePath(hostView as any);
+				if (basePath) this._baseYamlCachePath = basePath;
+				this._baseYamlCache = yaml;
+				return yaml;
+			}
+		}
+		return this._baseYamlCache;
+	}
+
+	private async ensureBaseYamlCache(): Promise<void> {
+		if (this._baseYamlLoading) return;
+		const hostView = this._getHostBasesLeaf()?.view as { getViewData?: () => string; file?: { path?: string } } | undefined;
+		const basePath = this.resolveBaseFilePath(hostView);
+		if (!basePath) return;
+
+		const liveYaml = this.getBaseYamlSync(hostView);
+		if (liveYaml && this._baseYamlCachePath === basePath) return;
+		if (this._baseYamlCache && this._baseYamlCachePath === basePath) return;
+
+		this._baseYamlLoading = true;
+		try {
+			const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
+			if (!abstractFile) return;
+			this._baseYamlCache = await this.app.vault.read(abstractFile as any);
+			this._baseYamlCachePath = basePath;
+			if (this.data) this.render();
+		} finally {
+			this._baseYamlLoading = false;
+		}
+	}
+
+	private getYamlValue(key: string): string | null {
+		const hostView = this._getHostBasesLeaf()?.view as { getViewData?: () => string; file?: { path?: string } } | undefined;
+		const yaml = this.getBaseYamlSync(hostView);
+		if (yaml) return readYamlKeyValue(yaml, key);
+		if (!this._baseYamlLoading) void this.ensureBaseYamlCache();
+		return null;
+	}
+
 	private getViewConfigValue(key: string): unknown {
 		if (key in this._viewConfigOverrides) return this._viewConfigOverrides[key];
 		const saved = this.getSavedViewConfig();
 		if (key in saved) return saved[key];
+		const yamlValue = this.getYamlValue(key);
+		if (yamlValue != null) return yamlValue;
 		return this.config.get(key);
 	}
 
@@ -469,22 +545,25 @@ export class TimelineView extends BasesView {
 	 *  Reads the current file content, injects/updates custom keys in YAML,
 	 *  and writes back via vault.modify(). */
 	private async _persistCustomKeysDirect(hostView: { getViewData?: () => string } | undefined): Promise<void> {
-		const leaf = this._getHostBasesLeaf();
-		const file = (leaf?.view as { file?: { path?: string } } | undefined)?.file;
-		if (!file?.path) return;
+		const basePath = this.resolveBaseFilePath(hostView as { file?: { path?: string } } | undefined);
+		if (!basePath) return;
 
-		const getViewData = hostView?.getViewData;
-		if (typeof getViewData !== 'function') return;
+		let yaml = this.getBaseYamlSync(hostView);
+		const abstractFile = this.app.vault.getAbstractFileByPath(basePath);
+		if (!abstractFile) return;
+		if (!yaml) {
+			yaml = await this.app.vault.read(abstractFile as any);
+		}
 
-		const { yaml, changed } = applyCustomKeysToYaml(
-			getViewData.call(hostView),
+		const { yaml: nextYaml, changed } = applyCustomKeysToYaml(
+			yaml,
 			this._collectCustomOverrides(),
 		);
 		if (!changed) return;
 
-		const abstractFile = this.app.vault.getAbstractFileByPath(file.path);
-		if (!abstractFile) return;
-		await this.app.vault.modify(abstractFile as any, yaml);
+		await this.app.vault.modify(abstractFile as any, nextYaml);
+		this._baseYamlCache = nextYaml;
+		this._baseYamlCachePath = basePath;
 	}
 
 	/** After Bases saves its declared options, inject session overrides and
@@ -501,6 +580,12 @@ export class TimelineView extends BasesView {
 			this._collectCustomOverrides(),
 		);
 		if (!changed) return;
+
+		const basePath = this.resolveBaseFilePath(hostView as { file?: { path?: string } } | undefined);
+		if (basePath) {
+			this._baseYamlCache = yaml;
+			this._baseYamlCachePath = basePath;
+		}
 
 		setViewData.call(hostView, yaml, true);
 		const requestSave = hostView?.requestSave;
@@ -601,20 +686,9 @@ export class TimelineView extends BasesView {
 			const str = String(override);
 			return (str !== '[object Object]' ? str : null) as BasesPropertyId | null;
 		}
-		// 2) Parse from the host view's YAML data
-		const hostView = this._getHostBasesLeaf()?.view as
-			| { getViewData?: () => string }
-			| undefined;
-		const getViewData = hostView?.getViewData;
-		if (typeof getViewData === 'function') {
-			const yaml = getViewData.call(hostView);
-			const pattern = new RegExp(`^    ${key}:\\s(.+)$`, 'm');
-			const match = pattern.exec(yaml);
-			if (match) {
-				const value = match[1].trim().replace(/^['"]|['"]$/g, '');
-				if (value) return value as BasesPropertyId;
-			}
-		}
+		// 2) Parse from the base file's YAML data
+		const yamlValue = this.getYamlValue(key);
+		if (yamlValue) return yamlValue as BasesPropertyId;
 		// 3) Bases declared config fallback
 		return this.config.getAsPropertyId(key);
 	}
