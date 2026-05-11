@@ -90,3 +90,9 @@ test('unescapes single quotes inside YAML strings', () => {
 	const yaml = baseYaml.trimEnd() + "\n    colorMap: 'It''s=ok'\n";
 	assert.equal(readYamlKeyValue(yaml, 'colorMap'), "It's=ok");
 });
+
+test('unescapes common double-quoted YAML escapes', () => {
+	const yaml = baseYaml.trimEnd()
+		+ '\n    colorMap: "High=\\\\blue\\nLow=\\\"red\\\""\n';
+	assert.equal(readYamlKeyValue(yaml, 'colorMap'), 'High=\\blue\nLow="red"');
+});

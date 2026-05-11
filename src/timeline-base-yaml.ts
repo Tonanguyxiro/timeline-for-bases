@@ -11,7 +11,17 @@ function unquoteYamlString(value: string): string {
 		return value.slice(1, -1).replace(/''/g, "'");
 	}
 	if (value.startsWith('"') && value.endsWith('"')) {
-		return value.slice(1, -1).replace(/\\"/g, '"');
+		const inner = value.slice(1, -1);
+		return inner.replace(/\\([\\nrt"])/g, (_match, ch: string) => {
+			switch (ch) {
+				case 'n': return '\n';
+				case 'r': return '\r';
+				case 't': return '\t';
+				case '"': return '"';
+				case '\\': return '\\';
+				default: return ch;
+			}
+		});
 	}
 	return value;
 }
