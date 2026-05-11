@@ -19,8 +19,8 @@ function unquoteYamlString(value: string): string {
 				case 't': return '\t';
 				case '"': return '"';
 				case '\\': return '\\';
-				default: return ch;
 			}
+			return ch;
 		});
 	}
 	return value;

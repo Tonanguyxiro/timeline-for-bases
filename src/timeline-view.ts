@@ -469,7 +469,7 @@ export class TimelineView extends BasesView {
 		for (const candidate of candidates) {
 			if (!candidate) continue;
 			if (typeof candidate === 'string') return candidate;
-			if (typeof candidate?.path === 'string') return candidate.path;
+			if (typeof candidate.path === 'string') return candidate.path;
 		}
 		return null;
 	}
