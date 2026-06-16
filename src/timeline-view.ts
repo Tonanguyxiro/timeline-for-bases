@@ -8,6 +8,7 @@ import {
 	BasesView,
 	BasesViewConfig,
 	DateValue,
+	MarkdownView,
 	Menu,
 	Modal,
 	NullValue,
@@ -34,6 +35,7 @@ import {
 } from './timeline-drag';
 import {
 	ALL_CUSTOM_KEYS,
+	CUSTOM_PROPERTY_KEYS,
 	decodeStyleMap,
 	encodeStyleMap,
 	getClampedBorderWidth,
@@ -492,19 +494,37 @@ export class TimelineView extends BasesView {
 	private _collectCustomOverrides(): Record<string, unknown> {
 		const overrides: Record<string, unknown> = {};
 		for (const key of ALL_CUSTOM_KEYS) {
-			if (key in this._viewConfigOverrides) overrides[key] = this._viewConfigOverrides[key];
+			if (!(key in this._viewConfigOverrides)) continue;
+			let value = this._viewConfigOverrides[key];
+			// colorBy/borderBy may hold an object property id; coerce to its
+			// canonical string so formatValueLine writes it instead of dropping it.
+			if (CUSTOM_PROPERTY_KEYS.has(key) && value != null && typeof value !== 'string') {
+				value = this.toPropertyIdString(value) ?? undefined;
+				if (value === undefined) continue;
+			}
+			overrides[key] = value;
 		}
 		return overrides;
 	}
 
-	/** Write custom keys directly to the .base file without triggering a
-	 *  Bases save cycle (which would recreate the view, causing a white flash).
-	 *  Reads the current file content, injects/updates custom keys in YAML,
-	 *  and writes back via vault.modify(). */
-	private async _persistCustomKeysDirect(hostView: { getViewData?: () => string } | undefined): Promise<void> {
+	/** Write custom keys without going through config.set().
+	 *  Standalone .base files are modified directly to avoid a Bases save cycle.
+	 *  Embedded ```base blocks must go through setViewData/requestSave so Obsidian
+	 *  updates only the fenced block instead of replacing the containing note. */
+	private async _persistCustomKeysDirect(
+		hostView: { getViewData?: () => string; setViewData?: (data: string, clear: boolean) => void; requestSave?: () => Promise<void> | void } | undefined,
+	): Promise<void> {
 		const leaf = this._getHostBasesLeaf();
 		const file = (leaf?.view as { file?: { path?: string } } | undefined)?.file;
-		if (!file?.path) return;
+		if (!file?.path) {
+			await this._persistEmbeddedBaseBlock();
+			return;
+		}
+
+		if (!file.path.endsWith('.base')) {
+			this._persistCustomKeys(hostView);
+			return;
+		}
 
 		const getViewData = hostView?.getViewData;
 		if (typeof getViewData !== 'function') return;
@@ -518,6 +538,55 @@ export class TimelineView extends BasesView {
 		const abstractFile = this.app.vault.getAbstractFileByPath(file.path);
 		if (!abstractFile) return;
 		await this.app.vault.modify(abstractFile as any, yaml);
+	}
+
+	private getOwnerMarkdownView(): MarkdownView | null {
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			const view = leaf.view as MarkdownView;
+			if (view.containerEl?.contains(this.containerEl)) return view;
+		}
+		return null;
+	}
+
+	private async _persistEmbeddedBaseBlock(): Promise<void> {
+		const view = this.getOwnerMarkdownView();
+		const file = view?.file;
+		if (!view || !file) return;
+
+		const current = typeof view.getViewData === 'function'
+			? view.getViewData()
+			: await this.app.vault.read(file);
+		const updated = this.applyCustomKeysToEmbeddedBaseBlock(current);
+		if (updated === current) return;
+
+		await this.app.vault.modify(file, updated);
+	}
+
+	private applyCustomKeysToEmbeddedBaseBlock(markdown: string): string {
+		const blockPattern = /```base[^\n]*\n([\s\S]*?)```/g;
+		let match: RegExpExecArray | null;
+
+		while ((match = blockPattern.exec(markdown)) !== null) {
+			const blockYaml = match[1];
+			if (!this.embeddedBlockMatchesView(blockYaml)) continue;
+
+			const { yaml, changed } = applyCustomKeysToYaml(blockYaml, this._collectCustomOverrides());
+			if (!changed) return markdown;
+
+			return markdown.slice(0, match.index)
+				+ match[0].replace(blockYaml, yaml)
+				+ markdown.slice(match.index + match[0].length);
+		}
+		return markdown;
+	}
+
+	private embeddedBlockMatchesView(yaml: string): boolean {
+		const typePattern = /^ {2}- type:\s*['"]?timeline['"]?\s*$/m;
+		if (!typePattern.test(yaml)) return false;
+
+		const escapedName = this.config.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const namePattern = new RegExp(`^ {4}name:\\s*['"]?${escapedName}['"]?\\s*$`, 'm');
+		return namePattern.test(yaml);
 	}
 
 	/** After Bases saves its declared options, inject session overrides and
@@ -616,6 +685,16 @@ export class TimelineView extends BasesView {
 		const strValue = typeof value === 'string' ? value : String(value);
 		if (allowedValues && !allowedValues.includes(strValue)) return defaultValue;
 		return strValue;
+	}
+
+	/** Coerce a value parsed from the property dropdown into a canonical
+	 *  BasesPropertyId string. Returns null for the degenerate object form so
+	 *  callers can bail rather than persist `[object Object]`. */
+	private toPropertyIdString(value: unknown): string | null {
+		if (value == null) return null;
+		if (typeof value === 'string') return value;
+		const str = String(value);
+		return str !== '[object Object]' ? str : null;
 	}
 
 	/** Read a BasesPropertyId from multiple sources: in-memory overrides,
@@ -802,11 +881,19 @@ export class TimelineView extends BasesView {
 			if (!val) {
 				this.setViewConfigValue(spec.propKey, null, true);
 			} else {
+				let parsed: unknown;
 				try {
-					this.setViewConfigValue(spec.propKey, JSON.parse(val), true);
+					parsed = JSON.parse(val);
 				} catch {
 					return;
 				}
+				// allProperties items can be objects at runtime despite the string
+				// type (see getPropertyIdFromConfig). Persist the canonical string id,
+				// never a raw object — formatValueLine drops objects, which silently
+				// leaves the colorBy/borderBy line in the .base file unchanged.
+				const propId = this.toPropertyIdString(parsed);
+				if (propId == null) return;
+				this.setViewConfigValue(spec.propKey, propId, true);
 			}
 			this.render();
 		});

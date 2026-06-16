@@ -1,6 +1,8 @@
 import esbuild from "esbuild-wasm";
 import process from "process";
 import builtins from "builtin-modules";
+import fs from "fs";
+import path from "path";
 
 const banner =
 `/*
@@ -11,12 +13,58 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = (process.argv[2] === "production");
 
+function loadLocalEnv() {
+	if (!fs.existsSync(".env.local")) return;
+
+	const envContent = fs.readFileSync(".env.local", "utf8");
+	for (const line of envContent.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith("#")) continue;
+
+		const match = trimmed.match(/^([^=]+)=["']?(.+?)["']?$/);
+		if (match && !process.env[match[1]]) {
+			process.env[match[1]] = match[2];
+		}
+	}
+}
+
+loadLocalEnv();
+
+function getObsidianPluginPath() {
+	const vaultPath = process.env.OBSIDIAN_VAULT;
+	if (!vaultPath || !fs.existsSync(vaultPath)) return null;
+
+	const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+	return path.join(vaultPath, ".obsidian", "plugins", manifest.id);
+}
+
+const copyToObsidian = {
+	name: "copy-to-obsidian",
+	setup(build) {
+		build.onEnd((result) => {
+			if (result.errors.length > 0) return;
+
+			const pluginPath = getObsidianPluginPath();
+			if (!pluginPath) return;
+
+			fs.mkdirSync(pluginPath, { recursive: true });
+
+			for (const file of ["main.js", "manifest.json", "styles.css"]) {
+				if (!fs.existsSync(file)) continue;
+				fs.copyFileSync(file, path.join(pluginPath, file));
+				console.log(`Copied ${file} to ${pluginPath}`);
+			}
+		});
+	},
+};
+
 await esbuild.build({
 	banner: {
 		js: banner,
 	},
 	entryPoints: ["src/main.ts"],
 	bundle: true,
+	plugins: [copyToObsidian],
 	external: [
 		"obsidian",
 		"electron",
@@ -40,3 +88,7 @@ await esbuild.build({
 	outfile: "main.js",
 	minify: prod,
 });
+
+if (prod) {
+	process.exit(0);
+}

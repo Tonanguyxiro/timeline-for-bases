@@ -35,10 +35,12 @@ test('removes a custom key when its override is null or undefined', () => {
 test('writes numeric and boolean overrides without quoting', () => {
 	const { yaml, changed } = applyCustomKeysToYaml(baseYaml, {
 		borderWidth: 3,
+		zoom: 2,
 		showColors: true,
 	});
 	assert.equal(changed, true);
 	assert.match(yaml, /^ {4}borderWidth: 3$/m);
+	assert.match(yaml, /^ {4}zoom: 2$/m);
 	assert.match(yaml, /^ {4}showColors: true$/m);
 });
 
@@ -85,6 +87,7 @@ test('extractCustomKeysFromYaml reads persisted custom keys with correct types',
 		"    colorMap: 'High=#e03131;Low=#2f9e44'",
 		"    borderBy: note.assigned",
 		"    borderWidth: 3",
+		"    zoom: 2",
 		"    timeScale: 'day'",
 		"    showColors: false",
 		"",
@@ -95,8 +98,28 @@ test('extractCustomKeysFromYaml reads persisted custom keys with correct types',
 	assert.equal(extracted.colorMap, 'High=#e03131;Low=#2f9e44');
 	assert.equal(extracted.borderBy, 'note.assigned');
 	assert.equal(extracted.borderWidth, 3);
+	assert.equal(extracted.zoom, 2);
 	assert.equal(extracted.timeScale, 'day');
 	assert.equal(extracted.showColors, false);
+});
+
+test('timeline display custom keys write and extract together', () => {
+	const overrides = {
+		colorBy: 'note.status',
+		colorMap: 'open=var(--color-red);done=var(--color-green)',
+		timeScale: 'day',
+		zoom: 1,
+		showColors: true,
+	};
+	const { yaml, changed } = applyCustomKeysToYaml(baseYaml, overrides);
+	assert.equal(changed, true);
+
+	const extracted = extractCustomKeysFromYaml(yaml);
+	assert.equal(extracted.colorBy, overrides.colorBy);
+	assert.equal(extracted.colorMap, overrides.colorMap);
+	assert.equal(extracted.timeScale, overrides.timeScale);
+	assert.equal(extracted.zoom, overrides.zoom);
+	assert.equal(extracted.showColors, overrides.showColors);
 });
 
 test('extractCustomKeysFromYaml omits keys absent from the YAML', () => {
@@ -120,4 +143,21 @@ test('extracted custom keys re-apply idempotently (hydration round-trip)', () =>
 	const extracted = extractCustomKeysFromYaml(yaml);
 	const { changed } = applyCustomKeysToYaml(yaml, extracted);
 	assert.equal(changed, false);
+});
+
+test('object-valued property override is dropped, not written (hazard the view layer must coerce)', () => {
+	// formatValueLine only serializes string/number/boolean. An object colorBy
+	// (which JSON.parse of the dropdown value can yield) leaves the colorBy line
+	// untouched. This is why TimelineView coerces to a string id before persisting.
+	const yaml = baseYaml.trimEnd() + "\n    colorBy: 'note.priority'\n";
+	const { yaml: out } = applyCustomKeysToYaml(yaml, { colorBy: { type: 'note', name: 'status' } });
+	assert.match(out, /^ {4}colorBy: 'note.priority'$/m); // unchanged — object silently dropped
+});
+
+test('string property override updates colorBy in place (post-coercion path)', () => {
+	const yaml = baseYaml.trimEnd() + "\n    colorBy: 'note.priority'\n";
+	const { yaml: out, changed } = applyCustomKeysToYaml(yaml, { colorBy: 'note.status' });
+	assert.equal(changed, true);
+	assert.match(out, /^ {4}colorBy: 'note.status'$/m);
+	assert.equal(out.match(/colorBy:/g)?.length, 1);
 });

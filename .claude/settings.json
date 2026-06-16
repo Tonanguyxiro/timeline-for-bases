@@ -7,10 +7,14 @@
       "Read(//mnt/d/Document/Obsidian/plugins_test/**)",
       "Read(//mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/**)",
       "Bash(mkdir -p /mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/timeline-for-bases)",
-      "Bash(cp main.js manifest.json styles.css /mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/timeline-for-bases/)"
+      "Bash(cp main.js manifest.json styles.css /mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/timeline-for-bases/)",
+      "Bash(cat)",
+      "Bash(node /tmp/repro.mjs)",
+      "Bash(rm -rf /tmp/yamlrepro /tmp/repro.mjs && echo cleaned)"
     ],
     "additionalDirectories": [
-      "/mnt/d/Document/Obsidian/plugins_test/.obsidian"
+      "/mnt/d/Document/Obsidian/plugins_test/.obsidian",
+      "/tmp/yamlrepro"
     ]
   }
 }

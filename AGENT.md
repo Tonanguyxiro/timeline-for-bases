@@ -127,6 +127,8 @@ Bases' `requestSave()` destroys and recreates the custom view instance. This has
 
 The colorBy dropdown stores BasesPropertyId via `JSON.parse(propSelect.value)`. For string properties like `"file.fullname"`, this produces a plain string. But `getPropertyIdFromConfig` must handle both cases — if `_viewConfigOverrides[key]` is an object, `String(override)` produces `"[object Object]"`. Check `typeof === 'string'` first; for objects, use `toString()` and return `null` if it yields `[object Object]`.
 
+**Write path must coerce too (not just the read path).** `formatValueLine` in `timeline-base-yaml.ts` only serializes string/number/boolean — an object value returns `null`, so the `colorBy`/`borderBy` line is silently left unchanged in the `.base` file. Because the re-quoting pass for other keys still flips `changed=true`, the file *does* get written (e.g. colorMap re-quoted) while the new colorBy value is dropped — the exact symptom of "changing the colorBy dropdown doesn't save." **Fix: coerce the parsed dropdown value to a canonical string id via `toPropertyIdString` before `setViewConfigValue`, and defensively re-coerce `CUSTOM_PROPERTY_KEYS` in `_collectCustomOverrides`.** Tests for the underlying hazard live in `tests/timeline-base-yaml.test.ts`.
+
 ### Plugin must be in community-plugins.json
 
 Plugins using `registerBasesView()` will NOT auto-load after a full Obsidian reload unless their plugin ID is listed in `.obsidian/community-plugins.json`. After reload the view shows "Unknown view type: timeline" because Obsidian never loaded the plugin. When deploying manually, always verify the ID is in that file.
