@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { applyCustomKeysToYaml } from '../src/timeline-base-yaml';
+import { applyCustomKeysToYaml, extractCustomKeysFromYaml } from '../src/timeline-base-yaml';
 
 const baseYaml = `views:
   - type: timeline
@@ -76,4 +76,48 @@ test('round-trips: writing then re-applying the same overrides is idempotent', (
 	const second = applyCustomKeysToYaml(first.yaml, overrides);
 	assert.equal(second.changed, false);
 	assert.equal(second.yaml, first.yaml);
+});
+
+test('extractCustomKeysFromYaml reads persisted custom keys with correct types', () => {
+	const yaml = baseYaml.trimEnd() + [
+		"",
+		"    colorBy: note.priority",
+		"    colorMap: 'High=#e03131;Low=#2f9e44'",
+		"    borderBy: note.assigned",
+		"    borderWidth: 3",
+		"    timeScale: 'day'",
+		"    showColors: false",
+		"",
+	].join("\n");
+
+	const extracted = extractCustomKeysFromYaml(yaml);
+	assert.equal(extracted.colorBy, 'note.priority');
+	assert.equal(extracted.colorMap, 'High=#e03131;Low=#2f9e44');
+	assert.equal(extracted.borderBy, 'note.assigned');
+	assert.equal(extracted.borderWidth, 3);
+	assert.equal(extracted.timeScale, 'day');
+	assert.equal(extracted.showColors, false);
+});
+
+test('extractCustomKeysFromYaml omits keys absent from the YAML', () => {
+	const extracted = extractCustomKeysFromYaml(baseYaml);
+	assert.equal('colorBy' in extracted, false);
+	assert.equal('colorMap' in extracted, false);
+});
+
+test('extracted custom keys re-apply idempotently (hydration round-trip)', () => {
+	// Mirrors the live flow: extract persisted keys, then re-persist them.
+	// Scalar string keys are stored quoted (as the plugin writes them); re-applying
+	// the extracted set must not report a change — otherwise repeated user edits
+	// would keep rewriting the file.
+	const yaml = baseYaml.trimEnd() + [
+		"",
+		"    colorBy: 'note.priority'",
+		"    colorMap: 'High=#e03131;Low=#2f9e44'",
+		"    borderWidth: 2",
+		"",
+	].join("\n");
+	const extracted = extractCustomKeysFromYaml(yaml);
+	const { changed } = applyCustomKeysToYaml(yaml, extracted);
+	assert.equal(changed, false);
 });

@@ -1,9 +1,57 @@
-import { ALL_CUSTOM_KEYS, CUSTOM_STRING_KEYS } from './timeline-style-config';
+import { ALL_CUSTOM_KEYS, CUSTOM_NUMERIC_KEYS, CUSTOM_STRING_KEYS } from './timeline-style-config';
 
 const DEFAULT_INDENT = '    ';
 
 function quoteYamlString(value: string): string {
 	return "'" + value.replace(/'/g, "''") + "'";
+}
+
+/** Unquote a raw YAML scalar value: strips matching single/double quotes and
+ *  un-escapes doubled single quotes (the inverse of quoteYamlString). */
+function unquoteYamlScalar(raw: string): string {
+	const trimmed = raw.trim();
+	if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
+		return trimmed.slice(1, -1).replace(/''/g, "'");
+	}
+	if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+		return trimmed.slice(1, -1);
+	}
+	return trimmed;
+}
+
+/** Extract the persisted custom-key values from a .base view YAML block.
+ *
+ *  Returns each key in the same in-memory form `setViewConfigValue` would store:
+ *  - CUSTOM_NUMERIC_KEYS → number
+ *  - showColors → boolean
+ *  - everything else → string (quotes stripped)
+ *
+ *  Keys absent from the YAML are omitted. Used to hydrate the view's override
+ *  map on load so that a later Bases save (which strips unknown keys) can be
+ *  fully repaired rather than losing settings from previous sessions. */
+export function extractCustomKeysFromYaml(
+	yaml: string,
+	indent: string = DEFAULT_INDENT,
+): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	const numericKeys = new Set<string>(CUSTOM_NUMERIC_KEYS);
+	for (const key of ALL_CUSTOM_KEYS) {
+		const pattern = new RegExp(`^${indent}${key}:\\s(.+)$`, 'm');
+		const match = pattern.exec(yaml);
+		if (!match) continue;
+		const rawValue = match[1].trim();
+		if (numericKeys.has(key)) {
+			const num = Number(rawValue);
+			if (!Number.isNaN(num)) result[key] = num;
+			continue;
+		}
+		if (key === 'showColors') {
+			result[key] = rawValue === 'true';
+			continue;
+		}
+		result[key] = unquoteYamlScalar(rawValue);
+	}
+	return result;
 }
 
 function formatValueLine(indent: string, key: string, value: unknown): string | null {

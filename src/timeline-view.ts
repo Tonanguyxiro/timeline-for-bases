@@ -39,7 +39,7 @@ import {
 	getClampedBorderWidth,
 	getCompleteStyleMap,
 } from './timeline-style-config';
-import { applyCustomKeysToYaml } from './timeline-base-yaml';
+import { applyCustomKeysToYaml, extractCustomKeysFromYaml } from './timeline-base-yaml';
 import {
 	formatTickLabel,
 	getAxisFormatter,
@@ -211,6 +211,12 @@ export class TimelineView extends BasesView {
 	private _scrollSyncRaf = 0;
 	private _todaySyncRaf = 0;
 	private _viewConfigOverrides: Record<string, unknown> = {};
+	/** True once custom keys have been hydrated from the .base file. Prevents
+	 *  re-hydration (which would clobber in-session edits) on later renders. */
+	private _overridesHydrated = false;
+	/** Serializes direct .base writes so concurrent edits (e.g. rapid swatch
+	 *  clicks) can't snapshot stale file content and clobber each other. */
+	private _persistQueue: Promise<void> = Promise.resolve();
 	private _dayLabelSlots: DayLabelSlot[] = [];
 	private _rowElsByPath = new Map<string, HTMLElement>();
 	private _barElsByPath = new Map<string, HTMLElement>();
@@ -290,6 +296,7 @@ export class TimelineView extends BasesView {
 
 		if (!this.data) return;
 
+		this.hydrateOverridesFromFile();
 		const config = this.loadConfig();
 		this.applyGroupedLayoutInset(config, this.getRenderGroups(config));
 		this.containerEl.setAttribute('data-density', 'compact');
@@ -442,8 +449,13 @@ export class TimelineView extends BasesView {
 			// For persist-only saves, skip config.set() and requestSave() / setViewData()
 			// entirely — config.set() may trigger Bases' auto-save which recreates the view.
 			// Instead write the custom keys directly to the .base file via vault.modify().
+			// Writes are serialized through _persistQueue so concurrent edits (e.g. rapid
+			// swatch clicks) can't snapshot stale file content and clobber each other.
 			// The caller is responsible for any needed re-render.
-			void this._persistCustomKeysDirect(hostView);
+			this._persistQueue = this._persistQueue
+				.catch(() => undefined)
+				.then(() => this._persistCustomKeysDirect(hostView));
+			void this._persistQueue;
 		} else {
 			this.config.set(key, value);
 			const requestSave = hostView?.requestSave;
@@ -453,6 +465,27 @@ export class TimelineView extends BasesView {
 				});
 			}
 		}
+	}
+
+	/** Hydrate the override map from the persisted .base file once per view
+	 *  instance. Bases strips unknown keys from the file on every `requestSave()`
+	 *  and `_persistCustomKeys` only restores keys present in `_viewConfigOverrides`.
+	 *  Without this, custom keys saved in a previous session (colorBy, colorMap,
+	 *  borderBy, …) are silently wiped the first time a native option changes.
+	 *  Keys edited earlier this session take precedence over the file. */
+	private hydrateOverridesFromFile(): void {
+		if (this._overridesHydrated) return;
+		const hostView = this._getHostBasesLeaf()?.view as
+			| { getViewData?: () => string }
+			| undefined;
+		const getViewData = hostView?.getViewData;
+		if (typeof getViewData !== 'function') return; // retry on a later render
+		const persisted = extractCustomKeysFromYaml(getViewData.call(hostView));
+		for (const [key, value] of Object.entries(persisted)) {
+			if (key in this._viewConfigOverrides) continue; // session edit wins
+			this._viewConfigOverrides[key] = value;
+		}
+		this._overridesHydrated = true;
 	}
 
 	/** Collect overrides for custom keys in the current session. */

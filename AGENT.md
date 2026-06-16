@@ -111,6 +111,10 @@ Bases' `requestSave()` destroys and recreates the custom view instance. This has
 - **Solution: `persistOnly=true` pattern.** Skip `config.set()` (which triggers auto-save) and `requestSave()`. Instead write custom keys directly to the `.base` file via `vault.modify()` using `_persistCustomKeysDirect`. This avoids the white-flash recreation cascade.
 - **Reading undeclared keys after recreation** requires a fallback chain: `_viewConfigOverrides` → raw YAML from `getViewData()` via regex → `config.getAsPropertyId()`.
 
+### Custom keys wiped when a native option changes
+
+`_collectCustomOverrides()` only returns keys present in `_viewConfigOverrides` (this session's edits). On a freshly opened view that map is empty. So when a native option (sort, order) triggers `requestSave()` — which strips ALL undeclared keys from the file — `_persistCustomKeys` had nothing to restore, silently wiping colorBy/colorMap/borderBy saved in a previous session. This is why settings "didn't save" and different tabs/pages rendered differently. **Fix: `hydrateOverridesFromFile()` runs once per view (start of `render()`), seeding `_viewConfigOverrides` from the persisted `.base` via `extractCustomKeysFromYaml` so the override set is always complete.** Session edits take precedence over the file. Direct writes are serialized through `_persistQueue` so rapid swatch clicks can't snapshot stale file content and clobber each other.
+
 ### encodeMap/decodeMap key format mismatch
 
 `encodeMap` strips JSON quotes from keys for clean YAML (e.g. `"note.priority"` → `note.priority`), but `loadConfig` looked up widths using `JSON.stringify(prop)` which produces `'"note.priority"'`. The lookup always missed, falling back to defaults — causing snap-back on resize. **Always check both JSON-stringified and plain string forms of keys when looking up decoded map values.**

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Read(//mnt/d/Document/Obsidian/plugins_test/**)",
+      "Read(//mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/**)",
+      "Bash(mkdir -p /mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/timeline-for-bases)",
+      "Bash(cp main.js manifest.json styles.css /mnt/d/Document/Obsidian/plugins_test/.obsidian/plugins/timeline-for-bases/)"
+    ],
+    "additionalDirectories": [
+      "/mnt/d/Document/Obsidian/plugins_test/.obsidian"
+    ]
+  }
+}
