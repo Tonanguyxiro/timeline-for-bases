@@ -30,6 +30,12 @@ test('decodeStyleMap preserves plain dotted keys and CSS function values', () =>
 	});
 });
 
+test('decodeStyleMap keeps wikilink pipes inside modern keys', () => {
+	assert.deepEqual(decodeStyleMap('project::[[AAA|BBB]]=true'), {
+		'project::[[AAA|BBB]]': 'true',
+	});
+});
+
 test('getCompleteStyleMap assigns defaults only to missing values', () => {
 	const result = getCompleteStyleMap({ blocked: '#111111' }, ['blocked', 'done', 'planned'], ['#111111', '#222222']);
 	assert.deepEqual(result, {

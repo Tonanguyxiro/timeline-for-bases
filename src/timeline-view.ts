@@ -8,6 +8,7 @@ import {
 	BasesView,
 	BasesViewConfig,
 	DateValue,
+	MarkdownRenderer,
 	MarkdownView,
 	Menu,
 	Modal,
@@ -2181,12 +2182,14 @@ export class TimelineView extends BasesView {
 			cls: 'bases-timeline-group-toggle',
 			attr: {
 				type: 'button',
-				'aria-label': `${isCollapsed ? 'Expand' : 'Collapse'} ${groupLabel} group`,
+				'aria-label': `${isCollapsed ? 'Expand' : 'Collapse'} group`,
 			},
 		});
 		setIcon(toggleEl, isCollapsed ? 'chevron-right' : 'chevron-down');
 		headingEl.createDiv({ cls: 'bases-group-property', text: groupProperty });
-		headingEl.createDiv({ cls: 'bases-group-value', text: groupLabel });
+		const groupValueEl = headingEl.createDiv({ cls: 'bases-group-value' });
+		const sourcePath = (this._getHostBasesLeaf()?.view as { file?: { path?: string } } | undefined)?.file?.path ?? '';
+		void MarkdownRenderer.render(this.app, groupLabel, groupValueEl, sourcePath, this);
 		groupHeaderEl.setAttribute('title', `${isCollapsed ? 'Expand' : 'Collapse'} group`);
 		toggleEl.addEventListener('click', (e: MouseEvent) => {
 			e.preventDefault();

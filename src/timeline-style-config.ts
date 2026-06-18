@@ -21,7 +21,7 @@ export function encodeStyleMap(map: Record<string, string>): string {
 export function decodeStyleMap(encoded: string): Record<string, string> {
 	const result: Record<string, string> = {};
 	if (!encoded) return result;
-	const useLegacy = encoded.includes('|') && !encoded.includes(';');
+	const useLegacy = encoded.includes('|') && !encoded.includes('=') && !encoded.includes(';');
 	const pairSep = useLegacy ? '|' : ';';
 	const kvSep = useLegacy ? ':' : '=';
 	for (const pair of encoded.split(pairSep)) {
