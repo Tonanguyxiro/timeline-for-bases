@@ -53,6 +53,10 @@ import {
 	snapStartToScale,
 } from './timeline-axis';
 import { getTimelineCanvasWidth } from './timeline-canvas';
+import {
+	getCenteredDateScrollLeft,
+	padTimelineRangeForDefaultToday,
+} from './timeline-viewport';
 
 interface TimelineConfig {
 	startDateProp: BasesPropertyId | null;
@@ -213,6 +217,7 @@ export class TimelineView extends BasesView {
 	private _todayVisibilityEls: HTMLElement[] = [];
 	private _scrollSyncRaf = 0;
 	private _todaySyncRaf = 0;
+	private _defaultTodayScrollTimeout = 0;
 	private _viewConfigOverrides: Record<string, unknown> = {};
 	/** True once custom keys have been hydrated from the .base file. Prevents
 	 *  re-hydration (which would clobber in-session edits) on later renders. */
@@ -253,6 +258,8 @@ export class TimelineView extends BasesView {
 		if (this._activeDrawEndListener) window.removeEventListener('mouseup', this._activeDrawEndListener, true);
 		this.containerEl.removeEventListener('keydown', this._boundKeyDown);
 		this._dragTooltipEl?.remove();
+		if (this._defaultTodayScrollTimeout) window.clearTimeout(this._defaultTodayScrollTimeout);
+		this._defaultTodayScrollTimeout = 0;
 		this.containerEl.empty();
 	}
 
@@ -310,6 +317,7 @@ export class TimelineView extends BasesView {
 		this.renderHeader(config);
 		this.renderControls(config);
 		this.renderTimeline(config);
+		this.centerDefaultTodayAfterRender();
 	}
 
 	private loadConfig(): TimelineConfig {
@@ -638,8 +646,10 @@ export class TimelineView extends BasesView {
 		this._barElsByPath.clear();
 		if (this._scrollSyncRaf) cancelAnimationFrame(this._scrollSyncRaf);
 		if (this._todaySyncRaf) cancelAnimationFrame(this._todaySyncRaf);
+		if (this._defaultTodayScrollTimeout) window.clearTimeout(this._defaultTodayScrollTimeout);
 		this._scrollSyncRaf = 0;
 		this._todaySyncRaf = 0;
+		this._defaultTodayScrollTimeout = 0;
 	}
 
 	private bindActiveDrawEnd(): void {
@@ -1183,6 +1193,10 @@ export class TimelineView extends BasesView {
 				max = new Date(max.getTime() + weekMs);
 			}
 
+			const paddedRange = padTimelineRangeForDefaultToday(min, max, config.timeScale, config.weekStart);
+			min = paddedRange.min;
+			max = paddedRange.max;
+
 			this._rangeMin = min; this._rangeMax = max;
 			const scrollerEl = this.bodyEl.createDiv({ cls: 'bases-timeline-scroller' });
 			this._scrollerEl = scrollerEl;
@@ -1225,6 +1239,16 @@ export class TimelineView extends BasesView {
 	private syncOverlayClip(scrollerEl: HTMLElement): void {
 		const scrollLeft = `${scrollerEl.scrollLeft}px`;
 		this.containerEl.style.setProperty('--timeline-scroll-left', scrollLeft);
+	}
+
+	private centerDefaultTodayAfterRender(): void {
+		if (this._scrollerEl) this._scrollToDate(new Date(), 'auto');
+		if (this._defaultTodayScrollTimeout) return;
+		this._defaultTodayScrollTimeout = window.setTimeout(() => {
+			this._defaultTodayScrollTimeout = 0;
+			if (!this._scrollerEl) return;
+			this._scrollToDate(new Date(), 'auto');
+		}, 0);
 	}
 
 	private bindTodayMarkerVisibilitySync(scrollerEl: HTMLElement, frozenWidth: number): void {
@@ -2653,7 +2677,7 @@ export class TimelineView extends BasesView {
 
 	// ─── Navigation ──────────────────────────────────────────────────────────
 
-	private _scrollToDate(date: Date): void {
+	private _scrollToDate(date: Date, behavior: ScrollBehavior = 'smooth'): void {
 		const scroller = this._scrollerEl;
 		if (!scroller) return;
 
@@ -2673,7 +2697,8 @@ export class TimelineView extends BasesView {
 				const markerCenter = scroller.scrollLeft + (markerRect.left - scrollerRect.left) + markerRect.width / 2;
 				const desiredCenter = frozenWidth + visibleTimelineWidth / 2;
 				const nextLeft = markerCenter - desiredCenter;
-				scroller.scrollTo({ left: Math.max(0, nextLeft), behavior: 'smooth' });
+				const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+				scroller.scrollTo({ left: Math.min(maxScrollLeft, Math.max(0, nextLeft)), behavior });
 				return;
 			}
 		}
@@ -2682,13 +2707,16 @@ export class TimelineView extends BasesView {
 		const max = this._rangeMax;
 		const config = this._lastConfig;
 		if (!min || !max || !config) return;
-		const total = max.getTime() - min.getTime();
-		if (total === 0) return;
-
-		const ratio = (target.getTime() - min.getTime()) / total;
-		const trackWidth = scroller.scrollWidth - config.frozenWidth;
-		const scrollLeft = ratio * trackWidth - visibleTimelineWidth / 2;
-		scroller.scrollTo({ left: Math.max(0, scrollLeft), behavior: 'smooth' });
+		const scrollLeft = getCenteredDateScrollLeft({
+			target,
+			min,
+			max,
+			scrollWidth: scroller.scrollWidth,
+			clientWidth: scroller.clientWidth,
+			frozenWidth: config.frozenWidth,
+		});
+		if (scrollLeft === null) return;
+		scroller.scrollTo({ left: scrollLeft, behavior });
 	}
 
 	/** Returns the Obsidian metadata type for a frontmatter property name, e.g. 'date', 'number', 'checkbox'. */

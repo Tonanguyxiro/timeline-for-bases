@@ -31,6 +31,7 @@ const tsconfig = {
 		path.join(repoRoot, 'src/timeline-base-yaml.ts'),
 		path.join(repoRoot, 'src/timeline-axis.ts'),
 		path.join(repoRoot, 'src/timeline-canvas.ts'),
+		path.join(repoRoot, 'src/timeline-viewport.ts'),
 		path.join(repoRoot, 'tests/**/*.test.ts'),
 	],
 };
