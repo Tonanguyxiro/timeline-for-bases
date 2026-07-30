@@ -25,6 +25,7 @@ import {
 	addCalendarDays,
 	diffCalendarDays,
 	formatCalendarDate,
+	getCalendarDayCenter,
 	localMidnight,
 	parseCalendarDateString as parseStrictCalendarDateString,
 	parseRawFrontmatterDate as parseStrictRawFrontmatterDate,
@@ -1320,7 +1321,7 @@ export class TimelineView extends BasesView {
 		if (today < min || today > max) return;
 
 		const total = max.getTime() - min.getTime();
-		const offset = today.getTime() - min.getTime();
+		const offset = getCalendarDayCenter(today).getTime() - min.getTime();
 		const left = total === 0 ? 0 : (offset / total) * 100;
 
 		// Anchor the today overlay to the full frozen zone so it never renders under sticky prop columns.

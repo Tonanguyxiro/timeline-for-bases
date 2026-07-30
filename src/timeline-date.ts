@@ -11,6 +11,12 @@ export function addCalendarDays(date: Date, days: number): Date {
 	return result;
 }
 
+export function getCalendarDayCenter(date: Date): Date {
+	const start = localMidnight(date);
+	const end = addCalendarDays(start, 1);
+	return new Date((start.getTime() + end.getTime()) / 2);
+}
+
 export function diffCalendarDays(start: Date, end: Date): number {
 	const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
 	const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());

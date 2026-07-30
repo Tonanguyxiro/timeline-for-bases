@@ -903,6 +903,7 @@
 	top: 0;
 	height: 100%;
 	width: 3px;
+	transform: translateX(-50%);
 	background: var(--color-red);
 	box-shadow: 0 0 12px rgba(255, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 	z-index: 10;

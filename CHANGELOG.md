@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.13
+
+### Bug Fixes
+- **Centered today marker** — the Today line now runs through the center of today's date column instead of the boundary between yesterday and today
+
 ## 0.1.11
 
 ### Improvements

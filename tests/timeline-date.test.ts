@@ -4,6 +4,7 @@ import {
 	addCalendarDays,
 	diffCalendarDays,
 	formatCalendarDate,
+	getCalendarDayCenter,
 	parseCalendarDateString,
 	parseRawFrontmatterDate,
 } from '../src/timeline-date';
@@ -36,6 +37,14 @@ test('calendar-day arithmetic stays stable across DST boundaries', () => {
 	const moved = addCalendarDays(start, 2);
 	assert.equal(formatCalendarDate(moved), '2026-03-30');
 	assert.equal(diffCalendarDays(start, moved), 2);
+});
+
+test('getCalendarDayCenter returns the midpoint between adjacent day boundaries', () => {
+	const day = parseCalendarDateString('2026-07-30')!;
+	const start = day.getTime();
+	const end = addCalendarDays(day, 1).getTime();
+
+	assert.equal(getCalendarDayCenter(day).getTime(), start + (end - start) / 2);
 });
 
 test('parseRawFrontmatterDate handles strings, numbers, and empty values safely', () => {
