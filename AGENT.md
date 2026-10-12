@@ -85,6 +85,8 @@ Recent refactors intentionally moved tricky logic into focused helper modules:
   Drag and resize range resolution.
 - `src/timeline-persistence.ts`
   Scoped per-base/per-view persistence helpers.
+- `src/timeline-deadline.ts`
+  Deadline warning range per time scale (lead-in start, peak bucket, end).
 - `src/timeline-tree.ts`
   Folder note tree ordering (pure path logic; rendering stays in the view).
 
@@ -185,6 +187,8 @@ Notes:
 - `eval` accepts an async IIFE, so clicks and waits can be scripted: `(async()=>{ el.click(); await sleep(500); return "ok" })()`.
 - Scope DOM queries to `app.workspace.activeLeaf.view.containerEl`; other open tabs and embedded bases also contain `.bases-timeline-view` elements.
 - Plugin settings can be exercised through the real settings tab: `app.setting.open(); app.setting.openTabById("timeline-for-bases")`, then click the control inside `app.setting.activeTab.containerEl`.
+- `plugin:reload` does not rebuild a base tab that is already open: that tab keeps running the old code (`view.plugin !== app.plugins.plugins["timeline-for-bases"]`). Close and reopen it (`app.workspace.activeLeaf.detach()` then `obsidian open ...`) before verifying.
+- The live view instance is `app.workspace.activeLeaf.view.controller.view`; switch views in a base with `controller.selectView("<view name>")`.
 - Wait a few seconds after `open`, `plugin:reload`, or editing a `.base` file on disk before querying; rows render asynchronously.
 - `dev:console` needs `obsidian dev:debug on` first; `dev:errors` works without it.
 - Keep fixtures in a dedicated `Timeline <Feature> QA/` folder in the test vault.

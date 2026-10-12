@@ -81,6 +81,7 @@ Timeline for Bases adds a **Gantt-style timeline view** to Obsidian Bases. Point
 - **Primary column from Bases order** — the first ordered Bases property becomes the primary frozen column automatically
 - **Resizable frozen columns** — primary and property columns can be resized and their widths persist per view
 - **Theme-adaptive colors** — all palette colors are Obsidian CSS variables; they shift with your theme automatically
+- **Deadline warning** — pick a deadline property per view and the row background gradually turns red as the deadline approaches
 - **Point tasks** — notes with only a start date render as a single-day marker
 
 **Other**
@@ -92,6 +93,7 @@ Timeline for Bases adds a **Gantt-style timeline view** to Obsidian Bases. Point
 Set in the Bases **Configure View** panel:
 - **Start date** — frontmatter property for the bar start
 - **End date** — frontmatter property for the bar end
+- **Deadline** — optional date property (for example `ddl`); when set, each row's background fades to red ahead of its deadline and is strongest on the deadline itself. The lead-in is one unit larger than the scale: a week in Day view, a month in Week, a quarter in Month, a year in Quarter, three years in Year. Leave empty to turn it off for that view; the **Deadline warning** toggle in the plugin settings turns it off everywhere
 - **Visible properties / order** — the first ordered property becomes the primary frozen column; remaining visible properties become sticky property columns
 - **Grouping / sorting** — native Bases grouping and sorting are reflected by the timeline
 
@@ -101,6 +103,8 @@ Set in the **Config panel** (gear icon in the timeline header):
 
 Plugin-wide setting (Settings → Timeline for Bases):
 - **Week starts on** — Monday or Sunday
+- **Folder note tree** — nest files under their folder note (off by default)
+- **Deadline warning** — master switch for the per-view deadline shading (on by default)
 
 ## Development
 

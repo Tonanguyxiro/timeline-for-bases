@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.15
+
+### New Features
+- **Deadline warning** — new per-view **Deadline** property option; each row's background fades to red over the period before its deadline (a week in Day view, a month in Week, a quarter in Month, a year in Quarter, three years in Year) and peaks on the deadline's own day/week/month. A **Deadline warning** toggle in the plugin settings (on by default) switches it off for all views
+
 ## 0.1.14
 
 ### New Features

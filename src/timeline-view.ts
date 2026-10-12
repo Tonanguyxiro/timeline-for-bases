@@ -59,6 +59,7 @@ import {
 	padTimelineRangeForDefaultToday,
 } from './timeline-viewport';
 import { buildFolderNoteTree, FolderNoteTreeRow } from './timeline-tree';
+import { getDeadlineWarningRange } from './timeline-deadline';
 
 interface TimelineConfig {
 	startDateProp: BasesPropertyId | null;
@@ -90,6 +91,7 @@ interface TimelineConfig {
 	/** Persisted collapsed state keyed by group property + label. */
 	collapsedGroups: Record<string, boolean>;
 	collapsedFolders: Record<string, boolean>;
+	deadlineProp: BasesPropertyId | null;
 }
 
 interface RenderGroup {
@@ -291,6 +293,7 @@ export class TimelineView extends BasesView {
 				items: [
 					datePropertyOption('Start date', 'startDate', 'Property'),
 					datePropertyOption('End date', 'endDate', 'Property'),
+					datePropertyOption('Deadline', 'deadline', 'None'),
 				]
 			},
 			{
@@ -424,6 +427,7 @@ export class TimelineView extends BasesView {
 			frozenWidth,
 			collapsedGroups,
 			collapsedFolders,
+			deadlineProp: this.plugin.settings.deadlineWarning ? this.config.getAsPropertyId('deadline') : null,
 		};
 	}
 
@@ -1183,6 +1187,9 @@ export class TimelineView extends BasesView {
 				if (!dates) continue;
 				if (!minDate || dates.start < minDate) minDate = dates.start;
 				if (!maxDate || dates.end > maxDate) maxDate = dates.end;
+				// Keep the deadline of a scheduled entry inside the rendered range.
+				const deadline = this.getEntryDeadline(entry, config);
+				if (deadline && deadline > maxDate) maxDate = deadline;
 			}
 			if (!minDate || !maxDate) {
 				this.bodyEl.createDiv({ cls: 'bases-timeline-empty', text: 'No tasks match the current filtered view.' });
@@ -2598,6 +2605,7 @@ export class TimelineView extends BasesView {
 		}
 
 		const trackEl = rowEl.createDiv({ cls: 'bases-timeline-track' });
+		this.renderDeadlineWarning(trackEl, entry, config, min, max);
 
 		const dates = entryDatesCache.get(entry) ?? null;
 		if (!dates) {
@@ -3431,6 +3439,28 @@ export class TimelineView extends BasesView {
 	}
 
 	// ─── End drag & resize ───────────────────────────────────────────────────
+
+	private getEntryDeadline(entry: BasesEntry, config: TimelineConfig): Date | null {
+		if (!config.deadlineProp) return null;
+		return this.parseDateValue(entry.getValue(config.deadlineProp))
+			?? this.parseRawFrontmatterDate(this.app.metadataCache.getFileCache(entry.file)?.frontmatter?.[this.getPropertyName(config.deadlineProp)]);
+	}
+
+	/** Fade the row background to red over the lead-in period before the entry's deadline. */
+	private renderDeadlineWarning(trackEl: HTMLElement, entry: BasesEntry, config: TimelineConfig, min: Date, max: Date): void {
+		const total = max.getTime() - min.getTime();
+		const deadline = this.getEntryDeadline(entry, config);
+		if (!deadline || total <= 0) return;
+
+		const { start, peakStart, end } = getDeadlineWarningRange(deadline, config.timeScale, config.weekStart);
+		if (end <= min || start >= max) return;
+		const warningEl = trackEl.createDiv({ cls: 'bases-timeline-deadline-warning' });
+		warningEl.style.left = `${((start.getTime() - min.getTime()) / total) * 100}%`;
+		warningEl.style.width = `${((end.getTime() - start.getTime()) / total) * 100}%`;
+		const peakPct = ((peakStart.getTime() - start.getTime()) / (end.getTime() - start.getTime())) * 100;
+		warningEl.style.setProperty('--tl-deadline-peak', `${peakPct}%`);
+		warningEl.setAttribute('data-deadline', formatCalendarDate(deadline));
+	}
 
 	private getEntryLabel(entry: BasesEntry, labelProp: BasesPropertyId | null): string {
 		if (labelProp) {

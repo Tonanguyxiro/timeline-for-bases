@@ -1343,6 +1343,21 @@ body.bases-timeline-resizing * {
 	opacity: 0.2;
 }
 
+/* Deadline warning: row background fades to red, full strength on the deadline's own column */
+.bases-timeline-deadline-warning {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	z-index: -1;
+	pointer-events: none;
+	background: linear-gradient(
+		to right,
+		rgba(var(--color-red-rgb), 0),
+		rgba(var(--color-red-rgb), 0.5) var(--tl-deadline-peak, 100%),
+		rgba(var(--color-red-rgb), 0.5)
+	);
+}
+
 .bases-timeline-style-section {
 	display: flex;
 	flex-direction: column;

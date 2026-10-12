@@ -4,11 +4,13 @@ import { TimelineView } from './timeline-view';
 interface TimelinePluginSettings {
 	defaultWeekStart: 'monday' | 'sunday';
 	folderNoteTree: boolean;
+	deadlineWarning: boolean;
 }
 
 const DEFAULT_SETTINGS: TimelinePluginSettings = {
 	defaultWeekStart: 'monday',
 	folderNoteTree: false,
+	deadlineWarning: true,
 };
 
 export default class TimelinePlugin extends Plugin {
@@ -207,6 +209,17 @@ class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.folderNoteTree)
 				.onChange(async (value) => {
 					this.plugin.settings.folderNoteTree = value;
+					await this.plugin.saveSettings();
+					this.plugin.views.forEach(view => view.refresh());
+				}));
+
+		new Setting(containerEl)
+			.setName('Deadline warning')
+			.setDesc('Fade a row\'s background to red as its deadline approaches. Each view also needs a Deadline property selected in its view options; turning this off disables the warning in every view.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.deadlineWarning)
+				.onChange(async (value) => {
+					this.plugin.settings.deadlineWarning = value;
 					await this.plugin.saveSettings();
 					this.plugin.views.forEach(view => view.refresh());
 				}));
