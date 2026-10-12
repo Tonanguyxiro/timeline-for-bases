@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.16
+
+### Improvements
+- **Tighter group headers** — group headings are now a single compact line instead of taking roughly three rows of height, and the group name uses the same font size as row labels
+
 ## 0.1.15
 
 ### New Features

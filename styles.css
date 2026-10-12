@@ -927,18 +927,13 @@
 /* Group headers */
 .bases-timeline-group {
 	position: relative;
-	padding-top: 12px;
-	margin-bottom: 4px;
+	padding-top: 4px;
 	border-bottom: 1px solid var(--background-modifier-border);
-	padding-bottom: 6px;
+	padding-bottom: 4px;
 	transition: background 0.1s;
 	background: var(--background-primary);
 	z-index: 9;
 	cursor: pointer;
-}
-
-.bases-timeline-group.is-collapsed {
-	margin-bottom: 0;
 }
 
 /* Match Bases group headers: sticky property + value pair */
@@ -949,7 +944,13 @@
 	align-items: center;
 	gap: 6px;
 	max-width: calc(100% - 24px);
+	line-height: var(--line-height-tight);
 	z-index: 9;
+}
+
+/* The group value is rendered as markdown; drop the paragraph spacing so the header stays one tight line */
+.bases-timeline-group .bases-group-value p {
+	margin: 0;
 }
 
 .bases-timeline-group-toggle {
@@ -993,7 +994,7 @@
 
 .bases-timeline-group .bases-group-value {
 	color: var(--text-normal);
-	font-size: var(--font-ui-medium);
+	font-size: var(--font-ui-small);
 	font-weight: 600;
 	white-space: nowrap;
 	overflow: hidden;
