@@ -64,6 +64,7 @@ Timeline for Bases adds a **Gantt-style timeline view** to Obsidian Bases. Point
 - **Drag between groups** — grab the grip handle on any row and drop it into another group to reassign it; the note's frontmatter is updated automatically
 - **Persistent group state** — collapsed groups are remembered per base view
 - **Undo support** — group changes are undoable like any other edit
+- **Folder note tree** — optional (plugin settings): nest files as a collapsible tree under their folder note (`Project/Project.md`, or `Project.md` next to `Project/`); collapsed folders are remembered per base view
 
 **Working with dates**
 - **Draw to create** — on rows with no dates, click and drag in the track area to draw a bar; start and end dates are written to the note on release

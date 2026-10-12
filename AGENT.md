@@ -85,6 +85,8 @@ Recent refactors intentionally moved tricky logic into focused helper modules:
   Drag and resize range resolution.
 - `src/timeline-persistence.ts`
   Scoped per-base/per-view persistence helpers.
+- `src/timeline-tree.ts`
+  Folder note tree ordering (pure path logic; rendering stays in the view).
 
 Keep new logic near these boundaries instead of adding more complexity back into `src/timeline-view.ts`.
 
@@ -155,6 +157,38 @@ Prefer verifying:
 - click-to-edit behavior for cells
 - right-click context menu behavior
 - grouped rendering after collapse
+
+## Live Testing With The Obsidian App And CLI
+
+The `obsidian` CLI only talks to a running Obsidian desktop app, so both are needed. Paths below are discovered, not hardcoded.
+
+1. Start the Obsidian desktop app if `obsidian version` reports "unable to find Obsidian". Launch the app binary in the background (its path is the `Exec=` line of the `obsidian.desktop` entry on Linux) and poll `obsidian version` until it answers. The CLI must run on the same OS side as the app: under WSL, a Windows Obsidian is invisible to the Linux CLI, so launch the Linux build (WSLg provides the display).
+2. Find the test vault with `obsidian vaults verbose` (name and path). Add `vault="<name>"` to commands if more than one vault is open.
+3. Deploy: set `OBSIDIAN_VAULT=<vault path>` in `.env.local` (gitignored); `npm run build` then copies `main.js`, `manifest.json`, and `styles.css` into `<vault>/.obsidian/plugins/timeline-for-bases/`. If the build prints no `Copied ...` lines, the path is wrong.
+4. Reload and open a base:
+
+```bash
+obsidian plugin:reload id=timeline-for-bases
+obsidian open path="<folder>/<name>.base"
+```
+
+5. Inspect and drive the UI:
+
+```bash
+obsidian eval code='document.querySelectorAll(".bases-timeline-row").length'
+obsidian dev:screenshot path=<file>.png
+obsidian dev:errors
+```
+
+Notes:
+
+- `eval` accepts an async IIFE, so clicks and waits can be scripted: `(async()=>{ el.click(); await sleep(500); return "ok" })()`.
+- Scope DOM queries to `app.workspace.activeLeaf.view.containerEl`; other open tabs and embedded bases also contain `.bases-timeline-view` elements.
+- Plugin settings can be exercised through the real settings tab: `app.setting.open(); app.setting.openTabById("timeline-for-bases")`, then click the control inside `app.setting.activeTab.containerEl`.
+- Wait a few seconds after `open`, `plugin:reload`, or editing a `.base` file on disk before querying; rows render asynchronously.
+- `dev:console` needs `obsidian dev:debug on` first; `dev:errors` works without it.
+- Keep fixtures in a dedicated `Timeline <Feature> QA/` folder in the test vault.
+- `obsidian help` lists every command.
 
 ## Documentation Guidance
 

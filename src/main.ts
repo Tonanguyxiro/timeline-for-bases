@@ -3,15 +3,19 @@ import { TimelineView } from './timeline-view';
 
 interface TimelinePluginSettings {
 	defaultWeekStart: 'monday' | 'sunday';
+	folderNoteTree: boolean;
 }
 
 const DEFAULT_SETTINGS: TimelinePluginSettings = {
 	defaultWeekStart: 'monday',
+	folderNoteTree: false,
 };
 
 export default class TimelinePlugin extends Plugin {
 	settings: TimelinePluginSettings = DEFAULT_SETTINGS;
 	private propertyValueCache = new Map<string, string[]>();
+	/** Live timeline views, so a settings change can re-render them. */
+	views = new Set<TimelineView>();
 
 	async onload() {
 		await this.loadSettings();
@@ -194,6 +198,17 @@ class TimelineSettingTab extends PluginSettingTab {
 					if (value !== 'monday' && value !== 'sunday') return;
 					this.plugin.settings.defaultWeekStart = value;
 					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Folder note tree')
+			.setDesc('Show files as a collapsible tree under their folder note — a note named after its folder, either inside it ("Project/Project.md") or next to it ("Project.md" beside "Project/"). Files without a folder note in the view stay at the top level.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.folderNoteTree)
+				.onChange(async (value) => {
+					this.plugin.settings.folderNoteTree = value;
+					await this.plugin.saveSettings();
+					this.plugin.views.forEach(view => view.refresh());
 				}));
 
 		new Setting(containerEl)

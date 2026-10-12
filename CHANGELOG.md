@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.14
+
+### New Features
+- **Folder note tree** — new plugin setting that nests files as a collapsible tree under their folder note (`Project/Project.md`, or `Project.md` next to `Project/`); collapsed folders persist per base view
+
 ## 0.1.13
 
 ### Bug Fixes

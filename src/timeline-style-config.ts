@@ -1,4 +1,4 @@
-export const CUSTOM_STRING_KEYS = ['colorMap', 'borderColorMap', 'propColWidths', 'collapsedGroups'] as const;
+export const CUSTOM_STRING_KEYS = ['colorMap', 'borderColorMap', 'propColWidths', 'collapsedGroups', 'collapsedFolders'] as const;
 export const CUSTOM_NUMERIC_KEYS = ['labelColWidth', 'borderWidth', 'zoom'] as const;
 export const CUSTOM_STRING_SCALAR_KEYS = ['timeScale', 'showColors', 'colorBy', 'borderBy'] as const;
 /** Scalar keys whose value is a BasesPropertyId. These may arrive as objects

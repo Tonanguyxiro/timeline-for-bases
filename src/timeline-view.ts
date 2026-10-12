@@ -58,6 +58,7 @@ import {
 	getCenteredDateScrollLeft,
 	padTimelineRangeForDefaultToday,
 } from './timeline-viewport';
+import { buildFolderNoteTree, FolderNoteTreeRow } from './timeline-tree';
 
 interface TimelineConfig {
 	startDateProp: BasesPropertyId | null;
@@ -88,6 +89,7 @@ interface TimelineConfig {
 	frozenWidth: number;
 	/** Persisted collapsed state keyed by group property + label. */
 	collapsedGroups: Record<string, boolean>;
+	collapsedFolders: Record<string, boolean>;
 }
 
 interface RenderGroup {
@@ -250,10 +252,12 @@ export class TimelineView extends BasesView {
 		document.addEventListener('mouseup', this._boundMouseUp);
 		this.containerEl.addEventListener('keydown', this._boundKeyDown);
 		this.containerEl.setAttribute('tabindex', '-1'); // allow keyboard focus
+		this.plugin.views.add(this);
 		this.render();
 	}
 
 	onunload(): void {
+		this.plugin.views.delete(this);
 		document.removeEventListener('mousemove', this._boundMouseMove);
 		document.removeEventListener('mouseup', this._boundMouseUp);
 		if (this._activeDrawEndListener) window.removeEventListener('mouseup', this._activeDrawEndListener, true);
@@ -297,6 +301,10 @@ export class TimelineView extends BasesView {
 				]
 			},
 		];
+	}
+
+	refresh(): void {
+		this.render();
 	}
 
 	private render(): void {
@@ -373,6 +381,11 @@ export class TimelineView extends BasesView {
 		for (const [k, v] of Object.entries(collapsedGroupsRaw)) {
 			collapsedGroups[k] = v === 'true' || v === true;
 		}
+		const rawCollapsedFolders = this.getViewConfigValue('collapsedFolders');
+		const collapsedFolders: Record<string, boolean> = {};
+		if (typeof rawCollapsedFolders === 'string') {
+			for (const k of Object.keys(decodeStyleMap(rawCollapsedFolders))) collapsedFolders[k] = true;
+		}
 		const propColWidths: Record<string, number> = {};
 		let frozenWidth = labelColWidth;
 		extraProps.forEach((prop) => {
@@ -410,6 +423,7 @@ export class TimelineView extends BasesView {
 			propColWidths,
 			frozenWidth,
 			collapsedGroups,
+			collapsedFolders,
 		};
 	}
 
@@ -1112,7 +1126,20 @@ export class TimelineView extends BasesView {
 						this.renderGroupHeading(canvasEl, group, config, isCollapsed);
 					}
 
-					const groupEntries = group.entries;
+					let groupEntries = group.entries;
+					let treeRows: Map<BasesEntry, FolderNoteTreeRow> | null = null;
+					if (this.plugin.settings.folderNoteTree) {
+						// The tree needs the final set of visible rows, so resolve dates up front.
+						const visible = groupEntries.filter(entry => {
+							let dates = entryDatesCache.get(entry);
+							if (dates === undefined) {
+								dates = this.resolveEntryDatesFromCache(entry, startPropName, endPropName, min, max, config);
+								entryDatesCache.set(entry, dates);
+							}
+							return !(dates && (dates.end < min || dates.start > max));
+						});
+						({ entries: groupEntries, rows: treeRows } = this.orderAsFolderNoteTree(visible));
+					}
 					for (let i = 0; i < groupEntries.length; i++) {
 						// Yield to browser every CHUNK entries
 						if (i > 0 && i % CHUNK === 0) {
@@ -1132,14 +1159,16 @@ export class TimelineView extends BasesView {
 						// Skip entries outside the render window
 						if (dates && (dates.end < min || dates.start > max)) continue;
 
-						this.renderRow(canvasEl, entry, config, min, max, rowIndex % 2 === 0, entryDatesCache);
+						this.renderRow(canvasEl, entry, config, min, max, rowIndex % 2 === 0, entryDatesCache, null, treeRows?.get(entry));
 						rowIndex++;
 					}
 
 					this.applyCollapsedStateToRenderedGroups(config.collapsedGroups, config.groupByProp);
+					this.applyCollapsedStateToRenderedFolders(config.collapsedFolders);
 				}
 
 				this.applyCollapsedStateToRenderedGroups(config.collapsedGroups, config.groupByProp);
+				this.applyCollapsedStateToRenderedFolders(config.collapsedFolders);
 			})();
 
 		} else {
@@ -1222,6 +1251,7 @@ export class TimelineView extends BasesView {
 			}
 
 			this.applyCollapsedStateToRenderedGroups(config.collapsedGroups, config.groupByProp);
+			this.applyCollapsedStateToRenderedFolders(config.collapsedFolders);
 		}
 	}
 
@@ -2185,12 +2215,57 @@ export class TimelineView extends BasesView {
 			}
 
 		let rowIndex = 0;
-		group.entries.forEach((entry) => {
+		let groupEntries = group.entries.filter((entry) => {
 			const dates = entryDatesCache.get(entry) ?? null;
-			if (dates && (dates.end < min || dates.start > max)) return;
-			this.renderRow(containerEl, entry, config, min, max, rowIndex % 2 === 0, entryDatesCache, isGrouped ? groupLabel : null);
+			return !(dates && (dates.end < min || dates.start > max));
+		});
+		let treeRows: Map<BasesEntry, FolderNoteTreeRow> | null = null;
+		if (this.plugin.settings.folderNoteTree) {
+			({ entries: groupEntries, rows: treeRows } = this.orderAsFolderNoteTree(groupEntries));
+		}
+		groupEntries.forEach((entry) => {
+			this.renderRow(containerEl, entry, config, min, max, rowIndex % 2 === 0, entryDatesCache, isGrouped ? groupLabel : null, treeRows?.get(entry));
 			rowIndex++;
 		});
+	}
+
+	private orderAsFolderNoteTree(entries: BasesEntry[]): { entries: BasesEntry[]; rows: Map<BasesEntry, FolderNoteTreeRow> } {
+		const entryByPath = new Map(entries.map(entry => [entry.file.path, entry]));
+		const rows = new Map<BasesEntry, FolderNoteTreeRow>();
+		for (const row of buildFolderNoteTree(entries.map(entry => entry.file.path))) {
+			rows.set(entryByPath.get(row.path)!, row);
+		}
+		return { entries: Array.from(rows.keys()), rows };
+	}
+
+	private toggleFolderCollapsed(path: string, config: TimelineConfig): void {
+		const next = { ...config.collapsedFolders };
+		if (next[path]) delete next[path];
+		else next[path] = true;
+		this.setViewConfigValue('collapsedFolders', encodeStyleMap(next as unknown as Record<string, string>), true);
+		config.collapsedFolders = next;
+		this.applyCollapsedStateToRenderedFolders(next);
+	}
+
+	private applyCollapsedStateToRenderedFolders(collapsedFolders: Record<string, boolean>): void {
+		// Rows are rendered in tree order, so everything deeper than a collapsed row
+		// that follows it (up to the next row at its depth or shallower) is its subtree.
+		let hideBelowDepth: number | null = null;
+		const els = Array.from(this.bodyEl.querySelectorAll('.bases-timeline-group, .bases-timeline-row[data-tree-depth]')) as HTMLElement[];
+		for (const el of els) {
+			if (el.hasClass('bases-timeline-group')) { hideBelowDepth = null; continue; }
+			const depth = Number(el.getAttribute('data-tree-depth'));
+			const isHidden = hideBelowDepth !== null && depth > hideBelowDepth;
+			el.toggleClass('is-tree-collapsed-hidden', isHidden);
+			if (isHidden) continue;
+			hideBelowDepth = null;
+			const toggleEl = el.querySelector('.bases-timeline-tree-toggle');
+			if (!(toggleEl instanceof HTMLElement)) continue;
+			const isCollapsed = !!collapsedFolders[el.getAttribute('data-entry-path') ?? ''];
+			setIcon(toggleEl, isCollapsed ? 'chevron-right' : 'chevron-down');
+			toggleEl.setAttribute('aria-label', `${isCollapsed ? 'Expand' : 'Collapse'} folder`);
+			if (isCollapsed) hideBelowDepth = depth;
+		}
 	}
 
 	private renderGroupHeading(containerEl: HTMLElement, group: RenderGroup, config: TimelineConfig, isCollapsed = false): HTMLElement {
@@ -2305,7 +2380,7 @@ export class TimelineView extends BasesView {
 		}
 	}
 
-	private renderRow(containerEl: HTMLElement, entry: BasesEntry, config: TimelineConfig, min: Date, max: Date, isEven: boolean = false, entryDatesCache: Map<BasesEntry, { start: Date; end: Date; isPoint: boolean; isInvalid?: boolean } | null>, currentGroupLabel: string | null = null): void {
+	private renderRow(containerEl: HTMLElement, entry: BasesEntry, config: TimelineConfig, min: Date, max: Date, isEven: boolean = false, entryDatesCache: Map<BasesEntry, { start: Date; end: Date; isPoint: boolean; isInvalid?: boolean } | null>, currentGroupLabel: string | null = null, treeRow?: FolderNoteTreeRow): void {
 		const rowEl = containerEl.createDiv({ cls: 'bases-timeline-row' });
 		if (isEven) rowEl.addClass('is-even');
 		rowEl.setAttribute('data-entry-path', entry.file.path);
@@ -2360,6 +2435,20 @@ export class TimelineView extends BasesView {
 			});
 		}
 		const labelInnerEl = labelEl.createDiv({ cls: 'bases-timeline-label-inner' });
+		if (treeRow) {
+			rowEl.setAttribute('data-tree-depth', String(treeRow.depth));
+			labelInnerEl.style.paddingLeft = `${treeRow.depth * 14}px`;
+			if (treeRow.hasChildren) {
+				const toggleEl = labelInnerEl.createEl('button', { cls: 'bases-timeline-group-toggle bases-timeline-tree-toggle', attr: { type: 'button' } });
+				toggleEl.addEventListener('click', (e: MouseEvent) => {
+					e.preventDefault();
+					e.stopPropagation();
+					this.toggleFolderCollapsed(entry.file.path, config);
+				});
+			} else {
+				labelInnerEl.createDiv({ cls: 'bases-timeline-tree-spacer' });
+			}
+		}
 		const labelSpan = labelInnerEl.createEl('span', { text: label });
 		labelEl.addEventListener('mouseover', (e: MouseEvent) => {
 			this.app.workspace.trigger('hover-link', {

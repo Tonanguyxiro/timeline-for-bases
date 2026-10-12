@@ -1010,8 +1010,18 @@
 	color: var(--color-accent);
 }
 
-.bases-timeline-canvas > .is-group-collapsed-hidden {
+.bases-timeline-canvas > .is-group-collapsed-hidden,
+.bases-timeline-canvas > .is-tree-collapsed-hidden {
 	display: none !important;
+}
+
+/* Folder note tree: chevron on folder notes, same-width spacer on leaves */
+.bases-timeline-tree-toggle,
+.bases-timeline-tree-spacer {
+	width: 12px;
+	min-width: 12px;
+	margin-right: 4px;
+	flex-shrink: 0;
 }
 
 .bases-timeline-group:hover .bases-group-property,
